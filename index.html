@@ -330,32 +330,77 @@
        Boot
     ===================================================== */
     async function boot() {
+      console.log('Starting boot process...');
+      
+      // Always initialize Three.js first
+      initThree();
+      
+      // Check for WebXR support
       if (!('xr' in navigator)) {
-        unsupported.hidden = false;
+        console.log('navigator.xr not available');
+        showFallbackButton();
         return;
       }
 
       try {
-        const supported = await navigator.xr.isSessionSupported('immersive-ar');
-        if (!supported) {
-          unsupported.hidden = false;
+        console.log('Checking AR session support...');
+        const isSupported = await navigator.xr.isSessionSupported('immersive-ar');
+        console.log('AR supported:', isSupported);
+        
+        if (!isSupported) {
+          showFallbackButton();
           return;
         }
-      } catch (e) {
-        console.error("Error checking AR support", e);
-        unsupported.hidden = false;
+      } catch (error) {
+        console.log('WebXR AR not supported:', error);
+        showFallbackButton();
         return;
       }
 
-      initThree();
+      console.log('WebXR AR is supported, creating AR button...');
+      
+      // Configure session for DOM overlay, which is needed for UI.
+      const sessionInit = {
+        requiredFeatures: ['hit-test', 'dom-overlay'],
+        domOverlay: { root: document.body }
+      };
 
-      // Create ARButton and add to hero overlay
-      const arBtn = ARButton.createButton(renderer, { requiredFeatures:['hit-test'] });
-      arBtn.className = 'rounded-md bg-sky-500 px-6 py-3 text-lg font-semibold hover:bg-sky-600';
-      arBtn.textContent = 'Start Measuring';
-      hero.append(arBtn);
+      try {
+        // Create ARButton and add to hero overlay
+        const arBtn = ARButton.createButton(renderer, sessionInit);
+        arBtn.className = 'rounded-md bg-sky-500 px-6 py-3 text-lg font-semibold hover:bg-sky-600';
+        arBtn.textContent = 'Start Measuring';
+        hero.append(arBtn);
+        console.log('AR button added to hero');
 
-      renderer.setAnimationLoop(renderLoop);
+        renderer.setAnimationLoop(renderLoop);
+        console.log('Animation loop started');
+      } catch (error) {
+        console.error('Error creating AR button:', error);
+        showFallbackButton();
+      }
+    }
+
+    function showFallbackButton() {
+      // Show unsupported message but also provide a button to test the 3D scene
+      const fallbackBtn = document.createElement('button');
+      fallbackBtn.className = 'rounded-md bg-gray-500 px-6 py-3 text-lg font-semibold hover:bg-gray-600 mt-4';
+      fallbackBtn.textContent = 'View 3D Scene (No AR)';
+      fallbackBtn.onclick = () => {
+        hero.hidden = true;
+        fab.hidden = false;
+        renderer.domElement.classList.remove('hidden');
+        renderer.setAnimationLoop(renderLoop);
+        // Add some demo objects to the scene
+        const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(0, 0, -1);
+        scene.add(cube);
+      };
+      
+      unsupported.querySelector('p').after(fallbackBtn);
+      unsupported.hidden = false;
     }
 
     boot();
