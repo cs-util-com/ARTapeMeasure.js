@@ -33,13 +33,22 @@
       <ul id="listItems" class="max-h-52 overflow-y-auto pr-1 no-scrollbar"></ul>
       <button id="closeList" class="mt-4 w-full rounded-md bg-gray-700 py-2 text-sm hover:bg-gray-600">Close</button>
     </div>
-  </div>  <script type="module">
+  </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+        "three/examples/jsm/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
     /* =====================================================
        Imports
     ===================================================== */
-    import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
-    import { ARButton }  from 'https://unpkg.com/three@0.165.0/examples/jsm/webxr/ARButton.js';
-    import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.165.0/examples/jsm/renderers/CSS2DRenderer.js';
+    import * as THREE from 'three';
+    import { ARButton }  from 'three/examples/jsm/webxr/ARButton.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
     /* =====================================================
        UI element shortcuts
