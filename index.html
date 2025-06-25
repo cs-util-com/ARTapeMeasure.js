@@ -16,9 +16,21 @@
   <div id="unsupported" class="fixed inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black text-center p-6" hidden>
     <h1 class="text-xl font-semibold">AR not supported</h1>
     <p class="max-w-sm text-sm leading-relaxed">Your browser or device doesn’t support WebXR immersive‑AR sessions. Try the latest Chrome or Safari on a recent phone.</p>
-  </div>  <!-- Hero overlay with Start button (injected later) -->  <div id="hero" class="fixed inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-black text-center p-6"></div>  <!-- Top‑center banner for live / final distance -->  <div id="banner" class="fixed top-2 left-1/2 z-10 -translate-x-1/2 rounded-md bg-white/20 px-3 py-1 text-sm font-semibold backdrop-blur-lg" hidden></div>  <!-- Loss‑of‑tracking banner -->  <div id="trackingWarn" class="fixed top-10 left-1/2 z-10 -translate-x-1/2 rounded-md bg-yellow-500/90 px-3 py-1 text-xs font-medium text-black" hidden>
+  </div>
+
+  <!-- Hero overlay with Start button (injected later) -->
+  <div id="hero" class="fixed inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-black text-center p-6" style="display: flex !important;"></div>
+
+  <!-- Top‑center banner for live / final distance -->
+  <div id="banner" class="fixed top-2 left-1/2 z-10 -translate-x-1/2 rounded-md bg-white/20 px-3 py-1 text-sm font-semibold backdrop-blur-lg" hidden></div>
+
+  <!-- Loss‑of‑tracking banner -->
+  <div id="trackingWarn" class="fixed top-10 left-1/2 z-10 -translate-x-1/2 rounded-md bg-yellow-500/90 px-3 py-1 text-xs font-medium text-black" hidden>
     Move phone to regain tracking …
-  </div>  <!-- Floating Action Button (opens session list) --><button id="fab" class="fixed bottom-4 right-4 z-10 h-14 w-14 rounded-full bg-sky-500 text-3xl leading-[3.25rem] shadow-lg hover:bg-sky-600" aria-label="Open list" hidden>☰</button>
+  </div>
+
+  <!-- Floating Action Button (opens session list) -->
+  <button id="fab" class="fixed bottom-4 right-4 z-10 h-14 w-14 rounded-full bg-sky-500 text-3xl leading-[3.25rem] shadow-lg hover:bg-sky-600" aria-label="Open list" hidden>☰</button>
 
   <!-- Session list modal -->  <div id="listModal" class="fixed inset-0 z-20 flex flex-col bg-black/70 backdrop-blur-sm" hidden>
     <div class="mt-auto w-full rounded-t-2xl bg-neutral-900 p-4 pb-8">
@@ -316,10 +328,20 @@
        UI interactions
     ===================================================== */
     fab.addEventListener('click', () => {
+      console.log('FAB clicked, opening list modal');
       listModal.hidden = false;
     });
     closeListBtn.addEventListener('click', () => {
+      console.log('Close button clicked, hiding list modal');
       listModal.hidden = true;
+    });
+    
+    // Also handle clicking outside the modal content to close it
+    listModal.addEventListener('click', (e) => {
+      if (e.target === listModal) {
+        console.log('Modal background clicked, hiding list modal');
+        listModal.hidden = true;
+      }
     });
     unitToggle.addEventListener('change', () => {
       currentUnits = unitToggle.checked ? 'imperial' : 'metric';
@@ -332,11 +354,13 @@
     async function boot() {
       console.log('Starting boot process...');
       
-      // Make sure unsupported overlay is hidden initially
+      // Make sure all UI elements are properly initialized
       unsupported.style.display = 'none';
       unsupported.hidden = true;
       hero.style.display = 'flex';
       hero.hidden = false;
+      listModal.hidden = true; // Ensure the list modal is hidden initially
+      fab.hidden = true; // FAB should be hidden until AR session starts
       
       // Always initialize Three.js first
       initThree();
@@ -365,11 +389,14 @@
 
       console.log('WebXR AR is supported, creating AR button...');
       
-      // Make sure hero is visible and unsupported is hidden
+      // Make sure hero is visible and everything else is hidden
       hero.style.display = 'flex';
+      hero.style.visibility = 'visible';
       hero.hidden = false;
       unsupported.style.display = 'none';
       unsupported.hidden = true;
+      listModal.hidden = true;
+      fab.hidden = true;
       
       // Configure session for DOM overlay, which is needed for UI.
       const sessionInit = {
@@ -380,13 +407,40 @@
       try {
         // Create ARButton and add to hero overlay
         const arBtn = ARButton.createButton(renderer, sessionInit);
-        arBtn.className = 'rounded-md bg-sky-500 px-6 py-3 text-lg font-semibold hover:bg-sky-600';
+        
+        // If ARButton creation fails, create a simple button
+        if (!arBtn) {
+          throw new Error('ARButton.createButton returned null');
+        }
+        
+        arBtn.className = 'rounded-md bg-sky-500 px-6 py-3 text-lg font-semibold hover:bg-sky-600 text-white border-none cursor-pointer';
         arBtn.textContent = 'Start Measuring';
-        hero.append(arBtn);
+        arBtn.style.display = 'block';
+        arBtn.style.zIndex = '30';
+        
+        // Clear any existing content in hero and add the button
+        hero.innerHTML = '';
+        
+        // Add a title
+        const title = document.createElement('h1');
+        title.className = 'text-2xl font-bold text-white mb-4';
+        title.textContent = 'AR Tape Measure';
+        hero.appendChild(title);
+        
+        // Add description
+        const description = document.createElement('p');
+        description.className = 'text-sm text-gray-300 mb-6 max-w-sm text-center';
+        description.textContent = 'Measure real-world distances using augmented reality. Tap to place measurement points.';
+        hero.appendChild(description);
+        
+        hero.appendChild(arBtn);
+        
         console.log('AR button added to hero');
         console.log('Hero element:', hero);
         console.log('Hero display:', hero.style.display);
         console.log('Hero hidden:', hero.hidden);
+        console.log('AR button:', arBtn);
+        console.log('AR button display:', arBtn.style.display);
         console.log('Unsupported display:', unsupported.style.display);
         console.log('Unsupported hidden:', unsupported.hidden);
 
@@ -394,7 +448,29 @@
         console.log('Animation loop started');
       } catch (error) {
         console.error('Error creating AR button:', error);
-        showFallbackButton();
+        
+        // Create a manual test button as fallback
+        hero.innerHTML = '';
+        const title = document.createElement('h1');
+        title.className = 'text-2xl font-bold text-white mb-4';
+        title.textContent = 'AR Tape Measure';
+        hero.appendChild(title);
+        
+        const testBtn = document.createElement('button');
+        testBtn.className = 'rounded-md bg-sky-500 px-6 py-3 text-lg font-semibold hover:bg-sky-600 text-white border-none cursor-pointer';
+        testBtn.textContent = 'Test AR (Manual)';
+        testBtn.onclick = async () => {
+          try {
+            const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
+            renderer.xr.setSession(session);
+          } catch (err) {
+            console.error('Failed to start AR session:', err);
+            alert('Failed to start AR session: ' + err.message);
+          }
+        };
+        hero.appendChild(testBtn);
+        
+        renderer.setAnimationLoop(renderLoop);
       }
     }
 
