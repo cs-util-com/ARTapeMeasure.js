@@ -332,6 +332,12 @@
     async function boot() {
       console.log('Starting boot process...');
       
+      // Make sure unsupported overlay is hidden initially
+      unsupported.style.display = 'none';
+      unsupported.hidden = true;
+      hero.style.display = 'flex';
+      hero.hidden = false;
+      
       // Always initialize Three.js first
       initThree();
       
@@ -359,6 +365,12 @@
 
       console.log('WebXR AR is supported, creating AR button...');
       
+      // Make sure hero is visible and unsupported is hidden
+      hero.style.display = 'flex';
+      hero.hidden = false;
+      unsupported.style.display = 'none';
+      unsupported.hidden = true;
+      
       // Configure session for DOM overlay, which is needed for UI.
       const sessionInit = {
         requiredFeatures: ['hit-test', 'dom-overlay'],
@@ -372,6 +384,11 @@
         arBtn.textContent = 'Start Measuring';
         hero.append(arBtn);
         console.log('AR button added to hero');
+        console.log('Hero element:', hero);
+        console.log('Hero display:', hero.style.display);
+        console.log('Hero hidden:', hero.hidden);
+        console.log('Unsupported display:', unsupported.style.display);
+        console.log('Unsupported hidden:', unsupported.hidden);
 
         renderer.setAnimationLoop(renderLoop);
         console.log('Animation loop started');
@@ -382,12 +399,18 @@
     }
 
     function showFallbackButton() {
+      // Hide hero and show unsupported message
+      hero.style.display = 'none';
+      unsupported.style.display = 'flex';
+      unsupported.hidden = false;
+      
       // Show unsupported message but also provide a button to test the 3D scene
       const fallbackBtn = document.createElement('button');
       fallbackBtn.className = 'rounded-md bg-gray-500 px-6 py-3 text-lg font-semibold hover:bg-gray-600 mt-4';
       fallbackBtn.textContent = 'View 3D Scene (No AR)';
       fallbackBtn.onclick = () => {
-        hero.hidden = true;
+        hero.style.display = 'none';
+        unsupported.style.display = 'none';
         fab.hidden = false;
         renderer.domElement.classList.remove('hidden');
         renderer.setAnimationLoop(renderLoop);
@@ -399,8 +422,10 @@
         scene.add(cube);
       };
       
-      unsupported.querySelector('p').after(fallbackBtn);
-      unsupported.hidden = false;
+      const existingBtn = unsupported.querySelector('button');
+      if (!existingBtn) {
+        unsupported.querySelector('p').after(fallbackBtn);
+      }
     }
 
     boot();
