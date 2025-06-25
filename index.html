@@ -320,8 +320,20 @@
     /* =====================================================
        Boot
     ===================================================== */
-    function boot() {
+    async function boot() {
       if (!('xr' in navigator)) {
+        unsupported.hidden = false;
+        return;
+      }
+
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+        if (!supported) {
+          unsupported.hidden = false;
+          return;
+        }
+      } catch (e) {
+        console.error("Error checking AR support", e);
         unsupported.hidden = false;
         return;
       }
