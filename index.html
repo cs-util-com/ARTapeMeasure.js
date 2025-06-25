@@ -30,9 +30,10 @@
   </div>
 
   <!-- Floating Action Button (opens session list) -->
-  <button id="fab" class="fixed bottom-4 right-4 z-10 h-14 w-14 rounded-full bg-sky-500 text-3xl leading-[3.25rem] shadow-lg hover:bg-sky-600" aria-label="Open list" hidden>☰</button>
+  <button id="fab" class="fixed bottom-4 right-4 z-10 h-14 w-14 rounded-full bg-sky-500 text-2xl flex items-center justify-center shadow-lg hover:bg-sky-600" aria-label="Open list" hidden>☰</button>
 
-  <!-- Session list modal -->  <div id="listModal" class="fixed inset-0 z-20 flex flex-col bg-black/70 backdrop-blur-sm" hidden>
+  <!-- Session list modal -->
+  <div id="listModal" class="fixed inset-0 z-20 flex flex-col bg-black/70 backdrop-blur-sm" hidden>
     <div class="mt-auto w-full rounded-t-2xl bg-neutral-900 p-4 pb-8">
       <div class="mb-4 flex items-center justify-between">
         <h2 class="text-base font-semibold">Measurements</h2>
@@ -205,9 +206,27 @@
       scene.add(controller);
 
       renderer.xr.addEventListener('sessionstart', () => {
+        console.log('AR session started - showing camera feed and FAB');
         renderer.domElement.classList.remove('hidden');
         hero.hidden = true;
+        hero.style.display = 'none';
+        
+        // Show FAB button with explicit styling
         fab.hidden = false;
+        fab.style.display = 'block';
+        fab.style.visibility = 'visible';
+        fab.style.opacity = '1';
+        
+        // Make sure list modal stays hidden
+        listModal.hidden = true;
+        listModal.style.display = 'none';
+        
+        console.log('FAB button state after session start:');
+        console.log('- fab hidden:', fab.hidden);
+        console.log('- fab display:', fab.style.display);
+        console.log('- fab visibility:', fab.style.visibility);
+        console.log('- fab opacity:', fab.style.opacity);
+        
         screen.orientation?.lock('portrait').catch(()=>{});
       });
       renderer.xr.addEventListener('sessionend', () => { location.reload(); });
@@ -330,10 +349,12 @@
     fab.addEventListener('click', () => {
       console.log('FAB clicked, opening list modal');
       listModal.hidden = false;
+      listModal.style.display = 'flex';
     });
     closeListBtn.addEventListener('click', () => {
       console.log('Close button clicked, hiding list modal');
       listModal.hidden = true;
+      listModal.style.display = 'none';
     });
     
     // Also handle clicking outside the modal content to close it
@@ -341,6 +362,7 @@
       if (e.target === listModal) {
         console.log('Modal background clicked, hiding list modal');
         listModal.hidden = true;
+        listModal.style.display = 'none';
       }
     });
     unitToggle.addEventListener('change', () => {
@@ -359,8 +381,22 @@
       unsupported.hidden = true;
       hero.style.display = 'flex';
       hero.hidden = false;
-      listModal.hidden = true; // Ensure the list modal is hidden initially
-      fab.hidden = true; // FAB should be hidden until AR session starts
+      
+      // Force hide the list modal - this should NOT be visible initially
+      listModal.hidden = true;
+      listModal.style.display = 'none';
+      
+      // FAB should be hidden until AR session starts
+      fab.hidden = true;
+      fab.style.display = 'none';
+      fab.style.visibility = 'hidden';
+      fab.style.opacity = '0';
+      
+      console.log('Initial UI state:');
+      console.log('- listModal hidden:', listModal.hidden);
+      console.log('- listModal display:', listModal.style.display);
+      console.log('- fab hidden:', fab.hidden);
+      console.log('- fab display:', fab.style.display);
       
       // Always initialize Three.js first
       initThree();
@@ -463,6 +499,12 @@
           try {
             const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
             renderer.xr.setSession(session);
+            // Manually trigger the session start behavior
+            hero.style.display = 'none';
+            fab.hidden = false;
+            fab.style.display = 'block';
+            fab.style.visibility = 'visible';
+            fab.style.opacity = '1';
           } catch (err) {
             console.error('Failed to start AR session:', err);
             alert('Failed to start AR session: ' + err.message);
@@ -488,6 +530,9 @@
         hero.style.display = 'none';
         unsupported.style.display = 'none';
         fab.hidden = false;
+        fab.style.display = 'block';
+        fab.style.visibility = 'visible';
+        fab.style.opacity = '1';
         renderer.domElement.classList.remove('hidden');
         renderer.setAnimationLoop(renderLoop);
         // Add some demo objects to the scene
