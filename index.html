@@ -1,134 +1,342 @@
-<!-- For the user stories & requirements see the README.md file -->
-
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en" class="h-full">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Decoupled Modules Example with Person Class</title>
-  <!-- Favicon: A white box --> <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23fff'/%3E%3C/svg%3E" type="image/svg+xml">
-  <!-- Use Tailwind CSS for all CSS styling -->
+  <meta charset="utf-8" />
+  <title>Pocket Tape AR</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <!-- Tailwind via CDN  -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @view-transition {
-      navigation: auto;
-    }
-    
-    nav a[aria-current="page"]:after {
-      border-color: white;
-      view-transition-name: posts-nav;
-    }
-    
-    /* Old stuff going out */
-    ::view-transition-old(posts-nav) {
-      animation: fade 0.2s linear forwards;
-      height: 100%;
-    }
-    
-    /* New stuff coming in */
-    ::view-transition-new(posts-nav) {
-      animation: fade 0.3s linear reverse;
-      height: 100%;
-    }
-    
-    @keyframes fade {
-      from { opacity: 1; }
-      to { opacity: 0; }
-    }
+    /* Utility to hide scrollbar in session list */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
-  <script>
-    // Only use if browser supports View Transitions
-    if (document.startViewTransition) {
-      window.addEventListener('click', (e) => {
-        // Only handle internal links
-        if (e.target.tagName === 'A' && e.target.origin === window.location.origin) {
-          e.preventDefault();
-          document.startViewTransition(() => {
-            window.location.href = e.target.href;
-          });
-        }
+</head>
+<body class="m-0 h-full overflow-hidden select-none bg-black text-white">
+  <!-- Unsupported‑device overlay -->
+  <div id="unsupported" class="fixed inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black text-center p-6" hidden>
+    <h1 class="text-xl font-semibold">AR not supported</h1>
+    <p class="max-w-sm text-sm leading-relaxed">Your browser or device doesn’t support WebXR immersive‑AR sessions. Try the latest Chrome or Safari on a recent phone.</p>
+  </div>  <!-- Hero overlay with Start button (injected later) -->  <div id="hero" class="fixed inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-black text-center p-6"></div>  <!-- Top‑center banner for live / final distance -->  <div id="banner" class="fixed top-2 left-1/2 z-10 -translate-x-1/2 rounded-md bg-white/20 px-3 py-1 text-sm font-semibold backdrop-blur-lg" hidden></div>  <!-- Loss‑of‑tracking banner -->  <div id="trackingWarn" class="fixed top-10 left-1/2 z-10 -translate-x-1/2 rounded-md bg-yellow-500/90 px-3 py-1 text-xs font-medium text-black" hidden>
+    Move phone to regain tracking …
+  </div>  <!-- Floating Action Button (opens session list) --><button id="fab" class="fixed bottom-4 right-4 z-10 h-14 w-14 rounded-full bg-sky-500 text-3xl leading-[3.25rem] shadow-lg hover:bg-sky-600" aria-label="Open list" hidden>☰</button>
+
+  <!-- Session list modal -->  <div id="listModal" class="fixed inset-0 z-20 flex flex-col bg-black/70 backdrop-blur-sm" hidden>
+    <div class="mt-auto w-full rounded-t-2xl bg-neutral-900 p-4 pb-8">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-base font-semibold">Measurements</h2>
+        <!-- Unit toggle -->
+        <label class="flex items-center text-xs">
+          <span class="mr-1">m&nbsp;/&nbsp;ft</span>
+          <input id="unitToggle" type="checkbox" class="h-4 w-7 cursor-pointer appearance-none rounded-full bg-gray-600 checked:bg-gray-300 transition" />
+        </label>
+      </div>
+      <ul id="listItems" class="max-h-52 overflow-y-auto pr-1 no-scrollbar"></ul>
+      <button id="closeList" class="mt-4 w-full rounded-md bg-gray-700 py-2 text-sm hover:bg-gray-600">Close</button>
+    </div>
+  </div>  <script type="module">
+    /* =====================================================
+       Imports
+    ===================================================== */
+    import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
+    import { ARButton }  from 'https://unpkg.com/three@0.165.0/examples/jsm/webxr/ARButton.js';
+    import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.165.0/examples/jsm/renderers/CSS2DRenderer.js';
+
+    /* =====================================================
+       UI element shortcuts
+    ===================================================== */
+    const $ = (id) => document.getElementById(id);
+    const hero         = $('hero');
+    const unsupported  = $('unsupported');
+    const banner       = $('banner');
+    const trackWarn    = $('trackingWarn');
+    const fab          = $('fab');
+    const listModal    = $('listModal');
+    const listItems    = $('listItems');
+    const unitToggle   = $('unitToggle');
+    const closeListBtn = $('closeList');
+
+    /* =====================================================
+       State
+    ===================================================== */
+    let scene, camera, renderer, labelRenderer, reticle;
+    let hitTestSource = null, viewerSpace = null;
+    let firstPoint = null, provisionalLine = null;
+    let currentUnits = window.navigator.language?.startsWith('en-US') || window.navigator.language?.startsWith('en-GB') ? 'imperial' : 'metric';
+    unitToggle.checked = (currentUnits === 'imperial');
+
+    const measurements = []; // { id, p1, p2, distanceM, color, objs:[THREE.Object3D] }
+    let hue = 0; // for colour generation
+
+    /* =====================================================
+       Utility functions
+    ===================================================== */
+    function nextColour() {
+      hue = (hue + 137) % 360;
+      return new THREE.Color(`hsl(${hue}, 80%, 55%)`);
+    }
+
+    function metresToDisplay(meters) {
+      if (currentUnits === 'metric') {
+        if (meters >= 1) return meters.toFixed(2) + ' m';
+        return Math.round(meters * 100) + ' cm';
+      } else {
+        const totalInches = meters * 39.3701;
+        const feet  = Math.floor(totalInches / 12);
+        const inches= (totalInches % 12).toFixed(2);
+        return feet + ' ft ' + inches + ' in';
+      }
+    }
+
+    function vibrate() { if (navigator.vibrate) navigator.vibrate(50); }
+
+    /* =====================================================
+       Session list helpers
+    ===================================================== */
+    function addListItem(measure) {
+      const li = document.createElement('li');
+      li.className = 'mb-2 flex items-center';
+      li.dataset.id = measure.id;
+
+      const dot = document.createElement('span');
+      dot.className = 'mr-2 h-3 w-3 flex-shrink-0 rounded-full';
+      dot.style.backgroundColor = '#' + measure.color.getHexString();
+
+      const txt = document.createElement('span');
+      txt.className = 'flex-1 text-sm';
+      txt.textContent = metresToDisplay(measure.distanceM);
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'ml-2 text-xs text-sky-400 hover:underline';
+      copyBtn.textContent = 'Copy';
+      copyBtn.onclick = () => navigator.clipboard.writeText(metresToDisplay(measure.distanceM));
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'ml-3 text-xs text-red-400 hover:underline';
+      delBtn.textContent = 'Delete';
+      delBtn.onclick = () => attemptDelete(measure.id);
+
+      li.append(dot, txt, copyBtn, delBtn);
+      listItems.append(li);
+    }
+
+    function refreshListUnits() {
+      listItems.querySelectorAll('li').forEach(li => {
+        const m = measurements.find(x => x.id == li.dataset.id);
+        if (m) li.children[1].textContent = metresToDisplay(m.distanceM);
       });
     }
-  </script>
-  <script src="src/index.js"></script>
-</head>
-<body class="font-mono p-8 bg-gray-50">
-  <div class="max-w-4xl mx-auto">
-    <header class="mb-8">
-      <h1 class="text-3xl font-bold text-blue-600 mb-4">Template Web App</h1>
-      <nav class="bg-blue-600 text-white p-4 rounded-lg mb-4">
-        <a href="index.html" class="mr-6 hover:underline font-bold relative" aria-current="page">
-          Home
-          <span class="absolute bottom-0 left-0 w-full h-0.5 bg-white"></span>
-        </a>
-        <a href="pages/features.html" class="mr-6 hover:underline">Features</a>
-        <a href="pages/about.html" class="hover:underline">About</a>
-      </nav>
-      <div class="bg-blue-100 border-l-4 border-blue-500 p-4 mb-6">
-        <p class="text-sm text-blue-700">This is a Tailwind CSS demonstration with modular JavaScript.</p>
-      </div>
-    </header>
-    
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-      <!-- Card 1 -->
-      <div class="bg-white p-6 rounded-lg shadow-md">
-        <h2 class="text-xl font-bold mb-4 text-gray-800">Greeting Card</h2>
-        <p class="text-gray-600 mb-4">Click the button below to greet the person.</p>
-        <button id="greetBtn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300">
-          Greet
-        </button>
-      </div>
-      
-      <!-- Card 2 -->
-      <div class="bg-white p-6 rounded-lg shadow-md">
-        <h2 class="text-xl font-bold mb-4 text-gray-800">Tailwind Features</h2>
-        <ul class="list-disc pl-5 space-y-2 text-gray-600">
-          <li>Responsive design with <span class="font-bold text-blue-500">breakpoints</span></li>
-          <li>Utility-first CSS framework</li>
-          <li>Customizable with configuration</li>
-        </ul>
-        <div class="mt-4">
-          <div class="flex gap-2">
-            <span class="bg-red-200 text-red-800 text-xs p-1 rounded">Tag</span>
-            <span class="bg-green-200 text-green-800 text-xs p-1 rounded">Utility</span>
-            <span class="bg-yellow-200 text-yellow-800 text-xs p-1 rounded">Responsive</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="bg-white p-6 rounded-lg shadow">
-      <h2 class="text-xl font-bold mb-4 text-gray-800">Interactive Components</h2>
-      <div class="mb-4">
-        <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
-          Username
-        </label>
-        <input class="w-full p-2 border rounded text-gray-700 focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username">
-      </div>
-      <div class="flex justify-between">
-        <button class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none transition">
-          Save
-        </button>
-        <button class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded focus:outline-none transition">
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Load the main module -->
-  <script type="module">
 
-    import { tellBirthday } from './src/utils/utils.js';
-    import { Person } from './src/components/person.js';
+    function attemptDelete(id) {
+      if (!confirm('Delete this measurement?')) return;
+      const idx = measurements.findIndex(m => m.id === id);
+      if (idx === -1) return;
+      const m = measurements[idx];
+      m.objs.forEach(o => scene.remove(o));
+      measurements.splice(idx,1);
+      listItems.querySelectorAll('li').forEach(li => { if (li.dataset.id == id) li.remove(); });
+    }
 
-    // Create a new Person instance with values defined in the HTML.
-    const person = new Person('Alice', 40);
-    document.getElementById('greetBtn').addEventListener('click', () => {
-      alert(tellBirthday(person));
+    /* =====================================================
+       Three.js / WebXR setup
+    ===================================================== */
+    function initThree() {
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera();
+
+      renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      renderer.domElement.classList.add('absolute','inset-0');
+      renderer.domElement.classList.add('hidden');
+      document.body.appendChild(renderer.domElement);
+
+      // 3‑D label renderer (CSS2D)
+      labelRenderer = new CSS2DRenderer();
+      labelRenderer.setSize(window.innerWidth, window.innerHeight);
+      labelRenderer.domElement.style.position = 'absolute';
+      labelRenderer.domElement.style.top = '0';
+      labelRenderer.domElement.style.pointerEvents = 'none';
+      document.body.appendChild(labelRenderer.domElement);
+
+      // Lighting
+      scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
+
+      // Reticle
+      reticle = new THREE.Mesh(
+        new THREE.RingGeometry(0.07,0.09,32).rotateX(-Math.PI/2),
+        new THREE.MeshBasicMaterial({ color:0x00ff88, side:THREE.DoubleSide })
+      );
+      reticle.visible = false;
+      reticle.matrixAutoUpdate = false;
+      scene.add(reticle);
+
+      // Resize handler
+      window.addEventListener('resize', () => {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // XR Controller for taps
+      const controller = renderer.xr.getController(0);
+      controller.addEventListener('select', onSelect);
+      scene.add(controller);
+
+      renderer.xr.addEventListener('sessionstart', () => {
+        renderer.domElement.classList.remove('hidden');
+        hero.hidden = true;
+        fab.hidden = false;
+        screen.orientation?.lock('portrait').catch(()=>{});
+      });
+      renderer.xr.addEventListener('sessionend', () => { location.reload(); });
+    }
+
+    /* =====================================================
+       Hit‑test helpers
+    ===================================================== */
+    function requestHitTestSource(session) {
+      return session.requestReferenceSpace('viewer').then((space) => {
+        viewerSpace = space;
+        return session.requestHitTestSource({ space: viewerSpace });
+      }).then((source) => { hitTestSource = source; });
+    }
+
+    /* =====================================================
+       Render loop
+    ===================================================== */
+    let lastHit = false;
+    function renderLoop(timestamp, frame) {
+      if (frame) {
+        const refSpace = renderer.xr.getReferenceSpace();
+        if (!hitTestSource && frame.session) requestHitTestSource(frame.session);
+        if (hitTestSource) {
+          const hitTestResults = frame.getHitTestResults(hitTestSource);
+          if (hitTestResults.length) {
+            const pose = hitTestResults[0].getPose(refSpace);
+            reticle.visible = true;
+            reticle.matrix.fromArray(pose.transform.matrix);
+            lastHit = true;
+          } else {
+            reticle.visible = false;
+            lastHit = false;
+          }
+          trackWarn.hidden = lastHit; // show/hide warning
+        }
+      }
+
+      // Update provisional line and banner
+      if (firstPoint && reticle.visible && provisionalLine) {
+        const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+        provisionalLine.geometry.setFromPoints([firstPoint, pos]);
+        banner.textContent = metresToDisplay(firstPoint.distanceTo(pos));
+      }
+
+      renderer.render(scene, camera);
+      labelRenderer.render(scene, camera);
+    }
+
+    /* =====================================================
+       Select (tap) handler
+    ===================================================== */
+    function onSelect() {
+      if (!reticle.visible) return; // ignore taps when no hit
+
+      const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+      vibrate();
+
+      if (!firstPoint) {
+        // First point
+        firstPoint = pos.clone();
+        addEndpointMarker(firstPoint);
+        banner.hidden = false;
+        banner.textContent = '0.00';
+        // Provisional line
+        const material = new THREE.LineBasicMaterial({ color:0xffffff });
+        provisionalLine = new THREE.Line(new THREE.BufferGeometry(), material);
+        scene.add(provisionalLine);
+      } else {
+        // Second point → finalize measurement
+        const p2 = pos.clone();
+        const distanceM = firstPoint.distanceTo(p2);
+        const color = nextColour();
+
+        // Remove provisional line
+        scene.remove(provisionalLine);
+
+        // Create final line
+        const lineMat = new THREE.LineBasicMaterial({ color });
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([firstPoint, p2]);
+        const finalLine = new THREE.Line(lineGeo, lineMat);
+        scene.add(finalLine);
+
+        // Second endpoint marker
+        addEndpointMarker(p2);
+
+        // Mid‑point label (CSS2D)
+        const mid = new THREE.Vector3().addVectors(firstPoint, p2).multiplyScalar(0.5);
+        const labelDiv = document.createElement('div');
+        labelDiv.textContent = metresToDisplay(distanceM);
+        labelDiv.className = 'text-xs font-semibold px-1.5 py-0.5 rounded-md';
+        labelDiv.style.backgroundColor = '#' + color.getHexString();
+        const labelObj = new CSS2DObject(labelDiv);
+        labelObj.position.copy(mid);
+        scene.add(labelObj);
+
+        // Store measurement
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+        measurements.push({ id, p1:firstPoint, p2, distanceM, color, objs:[finalLine,labelObj] });
+        addListItem(measurements[measurements.length-1]);
+
+        // Reset state
+        banner.hidden = true;
+        firstPoint = null;
+        provisionalLine = null;
+      }
+    }
+
+    function addEndpointMarker(position) {
+      const geo = new THREE.SphereGeometry(0.02, 16, 16);
+      const mat = new THREE.MeshBasicMaterial({ color:0xffffff });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(position);
+      scene.add(mesh);
+    }
+
+    /* =====================================================
+       UI interactions
+    ===================================================== */
+    fab.addEventListener('click', () => {
+      listModal.hidden = false;
+    });
+    closeListBtn.addEventListener('click', () => {
+      listModal.hidden = true;
+    });
+    unitToggle.addEventListener('change', () => {
+      currentUnits = unitToggle.checked ? 'imperial' : 'metric';
+      refreshListUnits();
     });
 
-  </script>
+    /* =====================================================
+       Boot
+    ===================================================== */
+    function boot() {
+      if (!('xr' in navigator)) {
+        unsupported.hidden = false;
+        return;
+      }
 
-</body>
+      initThree();
+
+      // Create ARButton and add to hero overlay
+      const arBtn = ARButton.createButton(renderer, { requiredFeatures:['hit-test'] });
+      arBtn.className = 'rounded-md bg-sky-500 px-6 py-3 text-lg font-semibold hover:bg-sky-600';
+      arBtn.textContent = 'Start Measuring';
+      hero.append(arBtn);
+
+      renderer.setAnimationLoop(renderLoop);
+    }
+
+    boot();
+  </script></body>
 </html>
