@@ -38,13 +38,14 @@
       <div class="mb-4 flex items-center justify-between">
         <h2 class="text-base font-semibold">Measurements</h2>
         <!-- Unit toggle -->
-        <label class="flex items-center space-x-2 text-xs">
-          <div class="relative inline-block w-10 mr-2 align-middle select-none">
+        <label class="flex items-center text-xs">
+          <span>ft</span>
+          <div class="relative inline-block w-10 mx-2 align-middle select-none">
             <input id="unitToggle" type="checkbox" class="sr-only peer" />
-            <div class="w-10 h-5 bg-gray-600 peer-checked:bg-gray-300 rounded-full transition-colors"></div>
+            <div class="w-10 h-5 bg-gray-300 rounded-full"></div>
             <div class="absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full peer-checked:translate-x-5 transform transition-transform"></div>
           </div>
-          <span id="unitLabel" class="font-medium"></span>
+          <span>m</span>
         </label>
       </div>
       <ul id="listItems" class="max-h-52 overflow-y-auto pr-1 no-scrollbar"></ul>
@@ -79,7 +80,6 @@
     const listModal    = $('listModal');
     const listItems    = $('listItems');
     const unitToggle   = $('unitToggle');
-    const unitLabel    = $('unitLabel');
     const closeListBtn = $('closeList');
 
     /* =====================================================
@@ -386,7 +386,6 @@
     unitToggle.addEventListener('change', () => {
       currentUnits = unitToggle.checked ? 'imperial' : 'metric';
       localStorage.setItem('units', currentUnits);
-      unitLabel.textContent = currentUnits === 'imperial' ? 'ft' : 'm';
       refreshListUnits();
       refreshSceneUnits();
     });
@@ -421,8 +420,6 @@
       
       // Always initialize Three.js first
       initThree();
-      // Set initial unit label text
-      unitLabel.textContent = currentUnits === 'imperial' ? 'ft' : 'm';
 
       // Check for WebXR support
       if (!('xr' in navigator)) {
