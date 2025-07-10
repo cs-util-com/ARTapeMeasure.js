@@ -299,7 +299,7 @@
     ===================================================== */
     function onSelect() {
       if (!reticle.visible) return; // ignore taps when no hit
-
+      if (!listModal.hidden) return; // ignore taps when list UI is open
       const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
       vibrate();
 
