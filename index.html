@@ -84,6 +84,8 @@
     let hitTestSource = null, viewerSpace = null;
     let firstPoint = null, provisionalLine = null;
     let currentUnits = window.navigator.language?.startsWith('en-US') || window.navigator.language?.startsWith('en-GB') ? 'imperial' : 'metric';
+    const savedUnits = localStorage.getItem('units');
+    if (savedUnits) currentUnits = savedUnits;
     unitToggle.checked = (currentUnits === 'imperial');
 
     const measurements = []; // { id, p1, p2, distanceM, color, objs:[THREE.Object3D] }
@@ -367,6 +369,7 @@
     });
     unitToggle.addEventListener('change', () => {
       currentUnits = unitToggle.checked ? 'imperial' : 'metric';
+      localStorage.setItem('units', currentUnits);
       refreshListUnits();
     });
 
